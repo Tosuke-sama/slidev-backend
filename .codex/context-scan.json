@@ -1,0 +1,44 @@
+{
+  "location": {
+    "entry_point": "src/main.ts",
+    "service_setup": "src/app.ts",
+    "slidev_management": "src/slidev",
+    "config": "src/config.ts"
+  },
+  "current_state": {
+    "runtime": "裸机 Node.js 服务，通过 yarn scripts 启动，未提供容器化方案",
+    "build_process": "使用 TypeScript 编译，dist/main.js 作为入口，puppeteer 依赖系统 Chromium",
+    "environment": "需要 Slidev CLI (通过 npx 自动安装)，依赖多端口运行"
+  },
+  "similar_cases": [
+    "slidevManager 使用 spawn/exec 调用 @slidev/cli，与容器内运行 slidev CLI 紧密相关",
+    "puppeteer 在 captureScreenshot 中启用 headless Chrome，需要容器内安装 Chromium 依赖"
+  ],
+  "tech_stack": {
+    "language": "TypeScript (Node.js 18+)",
+    "framework": "Express",
+    "tooling": "yarn, ts-node-dev, ts-jest",
+    "external": "puppeteer, @slidev/cli (通过 npx)",
+    "logging": "pino"
+  },
+  "tests": {
+    "framework": "Jest",
+    "existing_tests": "__tests__ 目录当前为空，README 仅指示运行 jest",
+    "gaps": "缺少针对容器化的测试脚本"
+  },
+  "observation_report": {
+    "findings": [
+      "仓库缺少 Dockerfile 与 .dockerignore",
+      "Slidev CLI 未作为依赖显式声明，容器化可能遇到 npx 交互问题",
+      "puppeteer 需要额外系统包，在容器构建时必须明确安装"
+    ],
+    "information_gaps": [
+      "容器运行时是否需要同时开放预览端口范围",
+      "线上部署期望的启动命令与资源限制要求"
+    ],
+    "recommended_focus": [
+      "补充系统依赖列表，确保 puppeteer 正常运行",
+      "评估 Slidev CLI 安装策略，避免运行时自动安装"
+    ]
+  }
+}

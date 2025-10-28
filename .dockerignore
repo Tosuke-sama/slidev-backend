@@ -1,0 +1,15 @@
+.codex/
+.git/
+.github/
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+*.log
+tmp/
+*.tsbuildinfo
+Dockerfile.dev
+__tests__/
+*.local
+*.cache

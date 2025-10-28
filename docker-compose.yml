@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  slidev-backend:
+    build:
+      context: .
+      target: runtime
+    image: slidev-backend:local
+    ports:
+      - "5310:5310"
+      - "5500-5510:5500-5510"
+    environment:
+      PORT: 5310
+      PREVIEW_BASE_PORT: 5500
+      PREVIEW_MAX_PORT: 5510
+    volumes:
+      - ./workspace:/workspace

@@ -1,0 +1,4 @@
+- [x] 接口契约：API 由 Express 提供，主端口 5310，预览端口范围 5500-6500，容器需支持环境变量覆盖。
+- [x] 技术选型理解：Node.js + Express，依赖 puppeteer 与 @slidev/cli，最佳实践是使用 node:18-bullseye，并在镜像内安装系统库。
+- [x] 风险点识别：Chromium 依赖、Slidev CLI 安装、动态端口暴露、镜像体积、运行时权限。
+- [x] 验证方式：计划在容器构建后执行 yarn test (单元测试) 与简单容器运行验证；若无法运行实际容器，记录在 verification.md 中。

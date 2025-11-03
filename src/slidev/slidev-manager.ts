@@ -9,8 +9,12 @@ import { HttpError } from '../utils/http-error';
 import { logger } from '../utils/logger';
 import { config } from '../config';
 import {
+  BuildFileEntry,
   BuildRequestBody,
   BuildResult,
+  ExportFormat,
+  ExportRequestBody,
+  ExportResult,
   ScreenshotRequestBody,
   ScreenshotResult,
   StartPreviewRequestBody,
@@ -31,6 +35,8 @@ type SlidevInstance = {
 export class SlidevManager {
   private readonly instances = new Map<number, SlidevInstance>();
   private readonly usedPorts = new Set<number>();
+  private readonly buildOutputs = new Map<number, string>();
+  private readonly exportOutputs = new Map<string, string>();
 
   async startPreview(body: StartPreviewRequestBody): Promise<StartPreviewResult> {
     const slideId = body.slideId;
@@ -126,13 +132,13 @@ export class SlidevManager {
   }
 
   async buildProject(body: BuildRequestBody): Promise<BuildResult> {
-    const { slideId, slidesPath, outputDir } = body;
+    const { slideId, slidesPath } = body;
 
     if (!(await fs.pathExists(slidesPath))) {
       throw new HttpError(400, `slidesPath 不存在: ${slidesPath}`);
     }
 
-    const base = body.base ?? `/api/presentation/${slideId}`;
+    const base = body.base ?? `/api/build/${slideId}/`;
     const tempDir = body.tempDir ?? path.join(process.cwd(), '.slidev-temp-build', `${slideId}-${Date.now()}`);
     await fs.ensureDir(path.dirname(tempDir));
 
@@ -157,14 +163,198 @@ export class SlidevManager {
       throw error;
     }
 
-    await fs.ensureDir(path.dirname(outputDir));
-    if (await fs.pathExists(outputDir)) {
-      await fs.remove(outputDir);
+    const targetOutputDir = this.resolveOutputDir(slideId, body.outputDir);
+
+    await fs.ensureDir(path.dirname(targetOutputDir));
+    if (await fs.pathExists(targetOutputDir)) {
+      await fs.remove(targetOutputDir);
     }
 
-    await fs.move(tempDir, outputDir, { overwrite: true });
+    await fs.move(tempDir, targetOutputDir, { overwrite: true });
+    this.buildOutputs.set(slideId, targetOutputDir);
 
-    return { outputDir };
+    return { outputDir: targetOutputDir };
+  }
+
+  async exportPresentation(body: ExportRequestBody): Promise<ExportResult> {
+    const { slideId, slidesPath } = body;
+    if (!(await fs.pathExists(slidesPath))) {
+      throw new HttpError(400, `slidesPath 不存在: ${slidesPath}`);
+    }
+
+    const format: ExportFormat = (body.format ?? 'pdf').toLowerCase() as ExportFormat;
+    if (!['pdf', 'pptx'].includes(format)) {
+      throw new HttpError(400, `不支持的导出格式: ${format}`);
+    }
+
+    const outputFile = this.resolveExportPath(slideId, format, body.outputFile);
+    await fs.ensureDir(path.dirname(outputFile));
+    if (await fs.pathExists(outputFile)) {
+      await fs.remove(outputFile);
+    }
+
+    const bin = this.resolveSlidevBinary();
+    const command = this.exportCommand(bin, slidesPath, outputFile, format, body.dark ?? false);
+
+    logger.info({ bin, command, format, outputFile }, '执行 slidev export');
+
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: path.dirname(slidesPath),
+        timeout: config.build.timeoutMs
+      });
+      if (stdout) {
+        logger.debug({ stdout }, 'slidev export stdout');
+      }
+      if (stderr) {
+        logger.warn({ stderr }, 'slidev export stderr');
+      }
+    } catch (error) {
+      logger.error({ error }, 'slidev export 失败');
+      throw error;
+    }
+
+    if (!(await fs.pathExists(outputFile))) {
+      throw new HttpError(500, `导出文件未生成: ${outputFile}`);
+    }
+
+    this.exportOutputs.set(this.exportKey(slideId, format), outputFile);
+
+    return { outputFile, format };
+  }
+
+  private resolveOutputDir(slideId: number, explicit?: string): string {
+    if (explicit) {
+      return explicit;
+    }
+    return path.join(process.cwd(), 'output', `${slideId}`);
+  }
+
+  async listBuildEntries(slideId: number, relativePath = ''): Promise<BuildFileEntry[]> {
+    const baseDir = await this.getOutputDir(slideId);
+    if (!baseDir) {
+      throw new HttpError(404, `未找到 slideId ${slideId} 的构建产物`);
+    }
+
+    const safeRelative = relativePath.replace(/^\//, '');
+    const baseResolved = path.resolve(baseDir);
+    const targetResolved = relativePath ? path.resolve(baseResolved, safeRelative) : baseResolved;
+
+    if (!targetResolved.startsWith(baseResolved)) {
+      throw new HttpError(400, `非法目录路径: ${relativePath}`);
+    }
+
+    if (!(await fs.pathExists(targetResolved))) {
+      throw new HttpError(404, `目录不存在: ${relativePath || '.'}`);
+    }
+    const entries = await fs.readdir(targetResolved);
+
+    const results: BuildFileEntry[] = await Promise.all(
+      entries.map(async (name) => {
+        const fullPath = path.join(targetResolved, name);
+        const stats = await fs.stat(fullPath);
+        const normalized = path
+          .relative(baseResolved, path.resolve(fullPath))
+          .split(path.sep)
+          .join('/');
+        return {
+          name,
+          path: normalized,
+          directory: stats.isDirectory(),
+          size: stats.size,
+          modifiedAt: stats.mtimeMs
+        };
+      })
+    );
+
+    return results;
+  }
+
+  async readBuildAsset(slideId: number, assetPath: string): Promise<Buffer> {
+    const baseDir = await this.getOutputDir(slideId);
+    if (!baseDir) {
+      throw new HttpError(404, `未找到 slideId ${slideId} 的构建产物`);
+    }
+
+    const safeRelative = assetPath.replace(/^\//, '');
+    const baseResolved = path.resolve(baseDir);
+    const targetResolved = path.resolve(baseResolved, safeRelative);
+    if (!targetResolved.startsWith(baseResolved)) {
+      throw new HttpError(400, `非法路径: ${assetPath}`);
+    }
+
+    const exists = await fs.pathExists(targetResolved);
+    if (!exists) {
+      throw new HttpError(404, `文件不存在: ${assetPath}`);
+    }
+
+    const stats = await fs.stat(targetResolved);
+    if (stats.isDirectory()) {
+      throw new HttpError(400, `请求路径是目录: ${assetPath}`);
+    }
+
+    return fs.readFile(targetResolved);
+  }
+
+  private async getOutputDir(slideId: number): Promise<string | undefined> {
+    const existing = this.buildOutputs.get(slideId);
+    if (existing && (await fs.pathExists(existing))) {
+      return existing;
+    }
+    const fallback = this.resolveOutputDir(slideId);
+    if (await fs.pathExists(fallback)) {
+      this.buildOutputs.set(slideId, fallback);
+      return fallback;
+    }
+    return undefined;
+  }
+
+  async readExportFile(slideId: number, format: ExportFormat): Promise<Buffer> {
+    const filePath = await this.getExportFile(slideId, format);
+    if (!filePath) {
+      throw new HttpError(404, `未找到 slideId ${slideId} 的 ${format} 导出文件`);
+    }
+
+    if (!(await fs.pathExists(filePath))) {
+      throw new HttpError(404, `导出文件不存在: ${filePath}`);
+    }
+
+    return fs.readFile(filePath);
+  }
+
+  private resolveExportPath(slideId: number, format: ExportFormat, explicit?: string): string {
+    if (explicit) {
+      return explicit;
+    }
+    const filename = `presentation.${format}`;
+    return path.join(process.cwd(), 'output', `${slideId}`, 'exports', filename);
+  }
+
+  private exportCommand(bin: string, slidesPath: string, outputFile: string, format: ExportFormat, dark: boolean): string {
+    const quoted = (value: string) => `"${value}"`;
+    const darkFlag = dark ? ' --dark' : '';
+    if (bin === 'npx') {
+      return `${bin} -y @slidev/cli export ${quoted(slidesPath)} --format ${format} --output ${quoted(outputFile)}${darkFlag}`;
+    }
+    return `${bin} export ${quoted(slidesPath)} --format ${format} --output ${quoted(outputFile)}${darkFlag}`;
+  }
+
+  private exportKey(slideId: number, format: ExportFormat): string {
+    return `${slideId}:${format}`;
+  }
+
+  private async getExportFile(slideId: number, format: ExportFormat): Promise<string | undefined> {
+    const key = this.exportKey(slideId, format);
+    const cached = this.exportOutputs.get(key);
+    if (cached && (await fs.pathExists(cached))) {
+      return cached;
+    }
+    const fallback = this.resolveExportPath(slideId, format);
+    if (await fs.pathExists(fallback)) {
+      this.exportOutputs.set(key, fallback);
+      return fallback;
+    }
+    return undefined;
   }
 
   shutdownAll(): void {
@@ -173,6 +363,8 @@ export class SlidevManager {
     }
     this.instances.clear();
     this.usedPorts.clear();
+    this.buildOutputs.clear();
+    this.exportOutputs.clear();
   }
 
   private terminateInstance(instance: SlidevInstance) {

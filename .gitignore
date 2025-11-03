@@ -6,3 +6,6 @@ dist
 .slidev-temp-build
 .codex
 verification.md
+output
+slidev-export-*.*
+slidev-backend.tar

@@ -13,13 +13,40 @@ export interface StartPreviewResult {
 export interface BuildRequestBody {
   slideId: number;
   slidesPath: string;
-  outputDir: string;
+  outputDir?: string;
   base?: string;
   tempDir?: string;
 }
 
 export interface BuildResult {
   outputDir: string;
+}
+
+export interface BuildFileEntry {
+  name: string;
+  path: string;
+  directory: boolean;
+  size: number;
+  modifiedAt: number;
+}
+
+export interface BuildFilesResult {
+  files: BuildFileEntry[];
+}
+
+export type ExportFormat = 'pdf' | 'pptx';
+
+export interface ExportRequestBody {
+  slideId: number;
+  slidesPath: string;
+  format?: ExportFormat;
+  outputFile?: string;
+  dark?: boolean;
+}
+
+export interface ExportResult {
+  outputFile: string;
+  format: ExportFormat;
 }
 
 export interface ScreenshotRequestBody {

@@ -65,13 +65,12 @@ docker compose up --build -d
 - `POST /api/preview/start`：启动或复用 Slidev 预览
 - `POST /api/preview/stop`：停止指定 slideId 的预览实例
 - `POST /api/screenshot`：对指定 slideId 截图
-- `POST /api/build`：执行 Slidev build 输出静态资源
+- `POST /api/build`：执行 Slidev build 输出静态资源；`outputDir` 可选，未提供时默认写入项目目录 `output/<slideId>`；默认 `base` 为 `/api/build/<slideId>/`，可根据部署实际覆盖
+- `POST /api/export`：导出 PDF / PPTX 文件（`format` 支持 `pdf`、`pptx`，`outputFile` 可选）；默认输出到 `output/<slideId>/exports/presentation.<format>`
+- `GET /api/build/:slideId/files`：返回构建产物中的 `index.html`（可使用查询参数 `path` 指定其它文件），可直接在浏览器中渲染
+- `GET /api/build/:slideId/entries`：查看指定 slideId 产物目录（可通过 `path` 查询参数下钻）
+- `GET /api/build/:slideId/assets/*`：按相对路径读取构建产物文件
+- `GET /api/export/:slideId/:format`：下载导出的 PDF / PPTX 文件
 - `GET /api/processes`：查看当前所有预览实例
 
 请求字段需提供绝对路径，例如 `slidesPath`、`outputDir`、`coverPath` 等，建议由调用方（slidev-ai backend）统一计算。
-
-## 与 slidev-ai 集成
-
-1. 在 `slidev-ai/backend` 中新增远程客户端，通过 HTTP 调用上述接口。
-2. 复用原仓库的 `SsoLite` 等工具计算封面、静态资源目录，将路径作为参数传给本服务。
-3. 两个项目共享文件系统（uploads/presentation 目录），即可完成生成和访问。

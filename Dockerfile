@@ -2,7 +2,9 @@ FROM node:20-bookworm AS base
 
 WORKDIR /app
 
-RUN corepack enable
+# RUN corepack enable
+# 直接安装特定版本的 yarn/pnpm
+RUN npm install -g yarn@latest
 
 COPY package.json yarn.lock ./
 

@@ -65,9 +65,6 @@ ENV SLIDEV_CLI_PATH=/usr/local/bin/slidev
 
 COPY package.json yarn.lock ./
 
-# 设置环境变量禁用 Worker Threads
-ENV NODE_OPTIONS="--no-worker"
-
 RUN corepack enable \
   && yarn install --frozen-lockfile --production
 

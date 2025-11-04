@@ -4,7 +4,7 @@ WORKDIR /app
 
 # RUN corepack enable
 # 直接安装特定版本的 yarn/pnpm
-RUN npm install -g yarn@latest
+# RUN npm install -g yarn@latest
 
 COPY package.json yarn.lock ./
 

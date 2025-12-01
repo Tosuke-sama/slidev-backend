@@ -9,7 +9,10 @@ WORKDIR /app
 COPY package.json yarn.lock ./
 
 # 安装完整依赖（含 devDependencies）供构建阶段使用
-RUN yarn install --frozen-lockfile
+# 设置 UV_THREADPOOL_SIZE=1 并禁用 io_uring 以避免 Docker 构建环境中的线程创建问题
+ENV UV_USE_IO_URING=0
+ENV UV_THREADPOOL_SIZE=1
+RUN yarn install --frozen-lockfile --network-timeout 100000
 
 FROM base AS build
 
